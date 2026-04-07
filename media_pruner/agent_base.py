@@ -120,19 +120,19 @@ class MediaAgent(ABC):
                 )
 
                 # Build the message for Ollama
-                # The ollama Python client accepts images as base64 or bytes
-                kwargs: dict[str, Any] = {
-                    "model": self.model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": current_prompt,
-                        }
-                    ],
+                # The ollama Python client expects images inside the message dict
+                message: dict[str, Any] = {
+                    "role": "user",
+                    "content": current_prompt,
                 }
 
                 if images:
-                    kwargs["images"] = images
+                    message["images"] = images
+
+                kwargs: dict[str, Any] = {
+                    "model": self.model,
+                    "messages": [message],
+                }
 
                 # Call the Ollama API
                 response = self.ollama_client.chat(**kwargs)
