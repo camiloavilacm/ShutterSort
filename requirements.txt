@@ -1,0 +1,5 @@
+ollama
+rich
+Pillow
+rawpy
+opencv-python-headless
