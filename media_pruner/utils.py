@@ -19,20 +19,60 @@ from typing import Any
 #   1. ```json { ... } ```  (markdown code block)
 #   2. { ... }              (bare JSON)
 #   3. Text before { ... }  (chatter before JSON)
+#   4. Multiple JSON objects (takes the first one)
 # ---------------------------------------------------------------------------
-_JSON_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)```|(\{[\s\S]*\})")
+_MARKDOWN_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)```")
+
+
+def _find_balanced_json(text: str, start: int = 0) -> str | None:
+    """Find the first balanced JSON object starting at position start.
+
+    Uses brace counting to handle nested objects correctly.
+    Stops at the first `}` that brings depth back to 0.
+    """
+    pos = text.find("{", start)
+    if pos == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(pos, len(text)):
+        char = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == "\\":
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[pos : i + 1]
+
+    return None
 
 
 def extract_json(text: str) -> str:
     """Extract the first valid JSON object from potentially noisy LLM output.
 
-    This function uses a two-step approach:
-    1. Try to match markdown code blocks or bare JSON with regex
-    2. If found, validate it's parseable JSON
-
-    Why regex first? Because it's much faster than trying to parse the
-    entire text as JSON and catching exceptions. We use regex to narrow
-    down to candidate blocks, then json.loads() to validate.
+    Strategy:
+    1. Try to match markdown code blocks first
+    2. Fall back to brace-counting to find the first balanced JSON object
+    3. This handles concatenated JSON (takes only the first object)
 
     Args:
         text: Raw string from the LLM, possibly containing markdown or chatter.
@@ -43,26 +83,19 @@ def extract_json(text: str) -> str:
     Raises:
         ValueError: If no JSON object can be found in the text.
     """
-    match = _JSON_PATTERN.search(text)
+    # Step 1: Try markdown code blocks
+    match = _MARKDOWN_PATTERN.search(text)
     if match:
-        # Group 1 is content inside code blocks, Group 2 is bare JSON
-        candidate = match.group(1) or match.group(2)
-        if candidate:
-            return candidate.strip()
+        candidate = match.group(1).strip()
+        # If the code block contains multiple JSON objects, take the first one
+        result = _find_balanced_json(candidate)
+        if result:
+            return result
 
-    # Fallback: try to find any balanced JSON object
-    # This handles edge cases where the regex above misses
-    start = text.find("{")
-    if start != -1:
-        # Find the matching closing brace by counting depth
-        depth = 0
-        for i, char in enumerate(text[start:], start):
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1].strip()
+    # Step 2: Brace-counting from the start of the text
+    result = _find_balanced_json(text)
+    if result:
+        return result
 
     raise ValueError(f"No JSON object found in text: {text[:200]!r}")
 

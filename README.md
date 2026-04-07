@@ -3,7 +3,7 @@
 AI-powered media folder analyzer and pruner. Scan your photo libraries, get intelligent scene analysis from a local Vision model, detect duplicates, and clean up with confidence.
 
 ```
-pip install shuttersort
+pip install shuttersort-ai
 shuttersort
 ```
 
@@ -54,7 +54,7 @@ shuttersort
 ### Install ShutterSort
 
 ```bash
-pip install shuttersort
+pip install shuttersort-ai
 ```
 
 Or from source:

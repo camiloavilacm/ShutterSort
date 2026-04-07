@@ -14,5 +14,5 @@ Usage:
     shuttersort --path ~/Photos --model llama3.2-vision
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "camiloavilacm"
