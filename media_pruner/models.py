@@ -50,6 +50,12 @@ class AnalysisResult:
     summary: str
     """One-sentence description of the folder contents."""
 
+    scene_types: list[str] = field(default_factory=list)
+    """List of all scene types detected in the images."""
+
+    primary_scene: str = ""
+    """The primary/dominant scene type."""
+
     people_count: int = 0
     """Number of people detected in the images."""
 
