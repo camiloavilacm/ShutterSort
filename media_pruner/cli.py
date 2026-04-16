@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .agent_curator import CuratorAgent
@@ -66,7 +67,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "  shuttersort --path ~/Photos          # Scan a custom path\n"
             "  shuttersort --path ~/A ~/B           # Scan multiple paths\n"
             "  shuttersort --dry-run                # Preview without deleting\n"
-            "  shuttersort --model llava            # Use a different model\n"
+            "  shuttersort --model moondream         # Use a different model\n"
         ),
     )
 
@@ -86,8 +87,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         "-m",
         type=str,
-        default="llama3.2-vision",
-        help="Ollama model to use for vision analysis (default: llama3.2-vision).",
+        default="moondream",
+        help="Ollama model to use for vision analysis (default: moondream).",
     )
 
     parser.add_argument(
@@ -110,6 +111,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Skip interactive review; just show the summary table.",
+    )
+
+    parser.add_argument(
+        "--export-html",
+        type=str,
+        default=None,
+        help="Export report to HTML file at the specified path.",
     )
 
     return parser.parse_args(argv)
@@ -138,6 +146,137 @@ def expand_paths(path_strings: list[str]) -> list[Path]:
         else:
             print(f"[yellow]Warning: Path does not exist, skipping: {path}[/]")
     return resolved
+
+
+def export_html_report(reports: list[FolderReport], output_path: Path) -> None:
+    """Export folder analysis reports to an HTML file.
+
+    Args:
+        reports: List of analyzed FolderReport objects.
+        output_path: Path where the HTML file will be saved.
+    """
+    html_content = _generate_html(reports)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html_content, encoding="utf-8")
+    print(f"[green]HTML report exported to: {output_path}[/]")
+
+
+def _generate_html(reports: list[FolderReport]) -> str:
+    """Generate HTML content from folder reports.
+
+    Args:
+        reports: List of FolderReport objects.
+
+    Returns:
+        HTML string content.
+    """
+    rows = []
+    for i, report in enumerate(reports, 1):
+        analysis = report.analysis
+
+        if analysis:
+            scene_display = analysis.scene_type
+            score_display = str(analysis.score)
+            summary = analysis.summary
+            people_display = str(analysis.people_count)
+        else:
+            scene_display = "N/A"
+            score_display = "N/A"
+            summary = "No analysis"
+            people_display = "—"
+
+        dupes = "Yes" if report.duplicate_of else "No"
+
+        rows.append(
+            f"""
+            <tr>
+                <td>{i}</td>
+                <td>{score_display}</td>
+                <td>{scene_display}</td>
+                <td>{people_display}</td>
+                <td>{report.path}</td>
+                <td>{summary}</td>
+                <td>{report.size_human}</td>
+                <td>{report.picture_percentage:.0f}%</td>
+                <td>{report.video_percentage:.0f}%</td>
+                <td>{dupes}</td>
+            </tr>
+            """
+        )
+
+    rows_html = "\n".join(rows)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShutterSort Report</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }}
+        h1 {{
+            color: #333;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        th, td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }}
+        th {{
+            background: #4a90d9;
+            color: white;
+        }}
+        tr:hover {{
+            background: #f9f9f9;
+        }}
+        .summary {{
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+    </style>
+</head>
+<body>
+    <h1>ShutterSort Report</h1>
+    <div class="summary">
+        <p><strong>Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p><strong>Total Folders:</strong> {len(reports)}</p>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Score</th>
+                <th>Scene</th>
+                <th>People</th>
+                <th>Folder</th>
+                <th>Summary</th>
+                <th>Size</th>
+                <th>Pic%</th>
+                <th>Vid%</th>
+                <th>Dupes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+</body>
+</html>
+"""
 
 
 def setup_logging(verbose: bool) -> None:
@@ -214,6 +353,11 @@ def run(argv: list[str] | None = None) -> int:
         curator = CuratorAgent(model=args.model)
         reports = curator.execute(reports)
         print()
+
+        # Step 5.5: Export HTML report if requested
+        if args.export_html:
+            output_path = Path(args.export_html).expanduser().resolve()
+            export_html_report(reports, output_path)
 
         # Step 6: DecisionAgent — interactive review
         decision = DecisionAgent(model=args.model, dry_run=args.dry_run)
