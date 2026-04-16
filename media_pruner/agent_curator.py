@@ -35,7 +35,8 @@ CURATOR_PROMPT = """You are an expert photo analyst. Look at these images and pr
 Analyze the overall content of these images and respond with ONLY a valid JSON object (no markdown, no code blocks, no extra text) matching this exact schema:
 
 {
-    "scene_type": "landscape | interior | portrait | street | event | junk | other",
+    "scene_types": ["landscape", "portrait", "interior", "street", "event", "other"],
+    "primary_scene": "landscape",
     "score": 1,
     "summary": "Brief 1-sentence description",
     "people_count": 0,
@@ -43,13 +44,19 @@ Analyze the overall content of these images and respond with ONLY a valid JSON o
     "emotions_detected": "Mood/vibe (e.g., happy, candid, serious)"
 }
 
+Instructions:
+- scene_types: List of ALL scene types present in these images (can have multiple)
+- primary_scene: The most common/dominant scene type
+- If images show MIXED content (e.g., portrait AND landscape), include both in scene_types
+- If there's a CLEAR majority (80%+ of images show same scene), primary_scene should reflect that
+- If content is DIVERSE (many different scenes), include multiple scene_types
+
 Scene type definitions:
-- landscape: Natural scenery, mountains, beaches, skies, outdoor vistas
-- interior: Indoor spaces, rooms, architecture, furniture
-- portrait: Photos focused on people, headshots, group photos
-- street: Urban scenes, city life, candid street photography
-- event: Weddings, parties, concerts, celebrations, gatherings
-- junk: Screenshots, memes, receipts, documents, low-value images
+- landscape: Natural scenery, mountains, beaches, skies, outdoor vistas, nature
+- interior: Indoor spaces, rooms, architecture, furniture, buildings
+- portrait: Photos focused on people, headshots, group photos, selfies
+- street: Urban scenes, city life, candid street photography, buildings
+- event: Weddings, parties, concerts, celebrations, gatherings, activities
 - other: Anything that doesn't fit the above categories
 
 Score guidelines:
@@ -189,8 +196,10 @@ class CuratorAgent(MediaAgent):
     def _load_image(self, image_path: Path) -> bytes | None:
         """Load an image file as JPEG bytes for Ollama.
 
-        This handles JPG, PNG, and extracted ARW previews.
-        MP4 frames are already extracted as JPG by the LibrarianAgent.
+        This handles:
+        - Regular images (JPG, PNG)
+        - RAW files (ARW) - extracts embedded JPEG preview
+        - Extracted video frames (JPG)
 
         Args:
             image_path: Path to the image file.
@@ -198,6 +207,12 @@ class CuratorAgent(MediaAgent):
         Returns:
             JPEG-encoded bytes, or None on failure.
         """
+        suffix = image_path.suffix.lower()
+
+        # Handle RAW files by extracting preview
+        if suffix == ".arw":
+            return self._extract_arw_preview(image_path)
+
         try:
             from PIL import Image
 
@@ -224,4 +239,39 @@ class CuratorAgent(MediaAgent):
 
         except Exception as exc:
             logger.warning("Could not load image %s: %s", image_path, exc)
+            return None
+
+    def _extract_arw_preview(self, arw_path: Path) -> bytes | None:
+        """Extract a JPEG preview from a RAW (ARW) file.
+
+        Args:
+            arw_path: Path to the ARW file.
+
+        Returns:
+            JPEG-encoded bytes, or None on failure.
+        """
+        try:
+            import rawpy
+            import io
+
+            with rawpy.imread(str(arw_path)) as raw:
+                rgb = raw.postprocess(
+                    use_camera_wb=True,
+                    no_auto_bright=True,
+                )
+
+            from PIL import Image
+
+            img = Image.fromarray(rgb)
+
+            max_dim = 1024
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            return buf.getvalue()
+
+        except Exception as exc:
+            logger.warning("Could not extract preview from %s: %s", arw_path, exc)
             return None

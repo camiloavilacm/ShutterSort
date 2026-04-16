@@ -40,7 +40,7 @@ class DecisionAgent(MediaAgent):
 
     def __init__(
         self,
-        model: str = "llama3.2-vision",
+        model: str = "moondream",
         max_retries: int = 3,
         ollama_client: Any = None,
         dry_run: bool = False,
@@ -144,16 +144,11 @@ class DecisionAgent(MediaAgent):
 
             # Color-code the score
             if analysis:
-                score = analysis.score
-                if score >= 8:
-                    score_style = "bold green"
-                elif score >= 5:
-                    score_style = "yellow"
-                else:
-                    score_style = "red"
-                score_display = f"[{score_style}]{score}/10[/]"
-
+                score_display = str(analysis.score)
                 scene = analysis.scene_type
+                # Show all scene types if multiple detected
+                if analysis.scene_types and len(analysis.scene_types) > 1:
+                    scene = ", ".join(analysis.scene_types)
                 people = str(analysis.people_count)
                 summary = (
                     analysis.summary[:32] + "..."
@@ -163,15 +158,12 @@ class DecisionAgent(MediaAgent):
             else:
                 score_display = "[dim]N/A[/]"
                 scene_display = "[dim]N/A[/]"
+                scene = scene_display
                 people = "[dim]—[/]"
                 summary = "[dim]No analysis[/]"
 
-            # Truncate folder path for display
-            folder_display = (
-                f".../{report.path.name}"
-                if len(str(report.path)) > 25
-                else str(report.path)
-            )
+            # Show full folder path for display
+            folder_display = str(report.path)
 
             # Duplicate indicator
             dupes = "[red]Yes[/]" if report.duplicate_of else "[dim]No[/]"
@@ -179,7 +171,7 @@ class DecisionAgent(MediaAgent):
             table.add_row(
                 str(i),
                 score_display,
-                scene if analysis else scene_display,
+                scene,
                 people,
                 folder_display,
                 summary,

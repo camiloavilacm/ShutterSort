@@ -49,7 +49,7 @@ class LibrarianAgent(MediaAgent):
 
     def __init__(
         self,
-        model: str = "llama3.2-vision",
+        model: str = "moondream",
         max_retries: int = 3,
         ollama_client: Any = None,
         max_image_size: int = 1024,
@@ -192,7 +192,7 @@ class LibrarianAgent(MediaAgent):
 
         # Select representative images for AI analysis
         # Strategy: pick the largest images (they tend to have more detail)
-        representative = self._select_representive_images(media_files, max_count=5)
+        representative = self._select_representive_images(media_files, max_count=20)
 
         report = FolderReport(
             path=folder_path,
@@ -217,34 +217,48 @@ class LibrarianAgent(MediaAgent):
         media_files: list[Path],
         max_count: int = 5,
     ) -> list[Path]:
-        """Select the most representative images for AI analysis.
+        """Select the most representative images and video frames for AI analysis.
 
-        Strategy: Sort images by file size (descending) and pick the top N.
-        Larger files tend to have more detail and fewer compression artifacts,
-        making them better candidates for vision analysis.
-
-        We only select image files (not videos) because:
-        - The Vision model works best with still images
-        - Video frames are extracted separately by the frame extractor
-        - Mixing video files into the image batch would confuse the model
+        Strategy:
+        - Sort images by file size (descending) and pick the top N
+        - Also extract frames from videos for analysis
 
         Args:
             media_files: All media files in the folder.
             max_count: Maximum number of images to select.
 
         Returns:
-            List of up to max_count image paths, sorted by size (largest first).
+            List of up to max_count image paths (including extracted video frames),
+            randomly selected for diverse analysis.
         """
+        import random
+
+        representative_files: list[Path] = []
+
         # Filter to only image files
         image_files = [f for f in media_files if f.suffix.lower() in IMAGE_EXTENSIONS]
 
-        # Sort by file size (descending) and take the top N
-        image_files.sort(
-            key=lambda p: p.stat().st_size if p.exists() else 0,
-            reverse=True,
-        )
+        # Shuffle images randomly to get diverse samples
+        random.shuffle(image_files)
 
-        return image_files[:max_count]
+        # Add up to max_count random images
+        for img in image_files[:max_count]:
+            representative_files.append(img)
+
+        # If we have room, also extract frames from videos
+        remaining_slots = max_count - len(representative_files)
+        if remaining_slots > 0:
+            video_files = [
+                f for f in media_files if f.suffix.lower() in VIDEO_EXTENSIONS
+            ]
+            random.shuffle(video_files)
+            for video in video_files[:remaining_slots]:
+                frames = self.extract_video_frames(video)
+                # Add first frame as representative
+                if frames:
+                    representative_files.append(frames[0])
+
+        return representative_files
 
     def extract_arw_preview(self, arw_path: Path) -> Path | None:
         """Extract a JPEG preview from a Sony ARW RAW file.

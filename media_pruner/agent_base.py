@@ -51,7 +51,7 @@ class MediaAgent(ABC):
 
     def __init__(
         self,
-        model: str = "llama3.2-vision",
+        model: str = "moondream",
         max_retries: int = 3,
         ollama_client: Any = None,
     ) -> None:
@@ -144,9 +144,11 @@ class MediaAgent(ABC):
                 # Convert the parsed dict to an AnalysisResult
                 # Using .get() with defaults provides safety against missing fields
                 result = AnalysisResult(
-                    scene_type=parsed.get("scene_type", "other"),
+                    scene_type=parsed.get("primary_scene", "other"),
                     score=int(parsed.get("score", 1)),
                     summary=parsed.get("summary", ""),
+                    scene_types=parsed.get("scene_types", []),
+                    primary_scene=parsed.get("primary_scene", ""),
                     people_count=int(parsed.get("people_count", 0)),
                     people_description=parsed.get("people_description", ""),
                     emotions_detected=parsed.get("emotions_detected", ""),
